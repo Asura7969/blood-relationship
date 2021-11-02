@@ -95,6 +95,7 @@ object CommandsHarvester extends Logging {
           logWarn(s"Missing output entities: $e")
           Seq.empty
       }
+
     }
   }
 
