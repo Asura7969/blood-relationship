@@ -9,7 +9,7 @@ import scala.collection.immutable.HashMap
  * @create 2021-10-31-13:09
  */
 class Entity(typeName: String) {
-  private var relationshipAttributes = new HashMap[String, Entity]()
+  private val relationshipAttributes = new HashMap[String, Entity]()
 
   def setAttribute(key: String, value: Any): Unit = {
     attributes + (key, value)

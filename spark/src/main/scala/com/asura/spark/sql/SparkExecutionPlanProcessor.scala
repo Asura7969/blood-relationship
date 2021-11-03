@@ -34,11 +34,9 @@ class SparkExecutionPlanProcessor(client: AsuraClient, val conf: Conf)
   extends AbstractEventProcessor[QueryDetail] with Logging {
 
   override protected def process(qd: QueryDetail): Unit = {
-    val logical: LogicalPlan = qd.qe.logical
     val sparkPlan: SparkPlan = qd.qe.sparkPlan
-    val executedPlan: SparkPlan = qd.qe.executedPlan
 
-    var outNodes: Seq[SparkPlan] = sparkPlan.collect {
+    val outNodes: Seq[SparkPlan] = sparkPlan.collect {
       case p: UnionExec => p.children
       case p: DataWritingCommandExec => Seq(p)
       case p: WriteToDataSourceV2Exec => Seq(p)
@@ -90,7 +88,8 @@ class SparkExecutionPlanProcessor(client: AsuraClient, val conf: Conf)
            * }}}
            */
           case c: CreateTableLikeCommand =>
-
+            logDebug(s"CREATE TABLE LIKE ...")
+            CommandsHarvester.CreateTableLikeHarvester.harvest(c, qd)
 
           case c: CreateDataSourceTableCommand =>
             logDebug(s"CREATE TABLE USING external source")
@@ -104,7 +103,8 @@ class SparkExecutionPlanProcessor(client: AsuraClient, val conf: Conf)
            * }}}
            */
           case c: InsertIntoDataSourceDirCommand =>
-
+            logDebug(s"INSERT OVERWRITE DIRECTORY ...")
+            CommandsHarvester.InsertIntoDataSourceDirHarvester.harvest(c, qd)
 
           case _ =>
             Seq.empty

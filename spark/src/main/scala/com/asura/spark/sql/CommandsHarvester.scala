@@ -1,8 +1,11 @@
 package com.asura.spark.sql
 
 import com.asura.spark.Entity
+import com.asura.spark.types.internal.sparkStorageFormatToEntity
+import com.asura.spark.types.metadata.STORAGEDESC_TYPE_STRING
 import com.asura.spark.types.{external, internal}
 import com.asura.spark.util.{Logging, SparkUtils}
+import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{PersistedView, UnresolvedRelation}
@@ -10,10 +13,10 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable, Hiv
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation, Project, ReplaceTableAsSelectStatement, View}
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.execution.{FileRelation, RowDataSourceScanExec, SparkPlan}
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, CreateTableCommand, CreateViewCommand, LoadDataCommand}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, CreateTableCommand, CreateTableLikeCommand, CreateViewCommand, InsertIntoDataSourceDirCommand, LoadDataCommand}
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCOptions
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.execution.datasources.{InsertIntoDataSourceCommand, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoDataSourceCommand, LogicalRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.sources.BaseRelation
 import org.json4s.JsonAST.JObject
 import org.json4s.jackson.JsonMethods.parse
@@ -58,10 +61,10 @@ object CommandsHarvester extends Logging {
           var dbName = ""
           var table = ""
           if (identifier.length == 2) {
-            dbName = identifier(0)
+            dbName = identifier.head
             table = identifier(1)
           } else {
-            table = identifier(0)
+            table = identifier.head
             dbName = SparkUtils.getCurrentDatabase
           }
           val tableDef = SparkUtils.getExternalCatalog().getTable(dbName, table)
@@ -79,8 +82,10 @@ object CommandsHarvester extends Logging {
   // InsertIntoDataSourceHarvester
   object InsertIntoDataSourceHarvester extends Harvester[InsertIntoDataSourceCommand] {
     override def harvest(node: InsertIntoDataSourceCommand, qd: QueryDetail): Unit = {
-      node.query
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
       val outputEntities = discoverInputsEntities(node.logicalRelation, qd.qe.executedPlan)
+
+
 
     }
   }
@@ -101,12 +106,32 @@ object CommandsHarvester extends Logging {
     }
   }
 
+  object CreateTableLikeHarvester extends Harvester[CreateTableLikeCommand] {
+    override def harvest(node: CreateTableLikeCommand, qd: QueryDetail): Unit = {
+
+      val inputEntities = prepareEntity(node.sourceTable)
+      val outputEntities = prepareEntity(node.targetTable)
+
+    }
+  }
+
   object CreateDataSourceTableHarvester extends Harvester[CreateDataSourceTableCommand] {
     override def harvest(
         node: CreateDataSourceTableCommand,
         qd: QueryDetail): Unit = {
       // only have table entities
       Seq(tableToEntity(node.table))
+    }
+  }
+
+  object InsertIntoDataSourceDirHarvester extends Harvester[InsertIntoDataSourceDirCommand] {
+    override def harvest(node: InsertIntoDataSourceDirCommand, qd: QueryDetail): Unit = {
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+      val outputEntities = new Entity(STORAGEDESC_TYPE_STRING)
+      node.storage.toLinkedHashMap.foreach(kv => outputEntities.setAttribute(kv._1, kv._2))
+
+
+      null
     }
   }
 

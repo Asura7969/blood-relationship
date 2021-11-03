@@ -106,28 +106,6 @@ object external {
     }
   }
 
-  // ================ Kafka entities =======================
-  val KAFKA_TOPIC_STRING = "kafka_topic"
-
-  def kafkaToEntity(
-                     cluster: String,
-                     topic: KafkaTopicInformation): SACAtlasEntityWithDependencies = {
-    val topicName = topic.topicName.toLowerCase
-    val clusterName = topic.clusterName match {
-      case Some(customName) => customName
-      case None => cluster
-    }
-
-    val kafkaEntity = new Entity(KAFKA_TOPIC_STRING)
-    kafkaEntity.setAttribute("qualifiedName", topicName + '@' + clusterName)
-    kafkaEntity.setAttribute("name", topicName)
-    kafkaEntity.setAttribute("clusterName", clusterName)
-    kafkaEntity.setAttribute("uri", topicName)
-    kafkaEntity.setAttribute("topic", topicName)
-
-    SACAtlasEntityWithDependencies(kafkaEntity)
-  }
-
   // ================ RDBMS based entities ======================
   val RDBMS_TABLE = "rdbms_table"
 
