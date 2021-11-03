@@ -122,7 +122,6 @@ object CommandsHarvester extends Logging {
 
 
 
-
           }.getOrElse(Seq.empty)
         case w: MicroBatchWrite =>
           // TODO:
