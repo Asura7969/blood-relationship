@@ -1,5 +1,6 @@
 package com.asura.spark.sql
 
+import com.asura.spark.sql.CommandsHarvester.WriteToDataSourceV2Harvester
 import com.asura.spark.util.Logging
 import com.asura.spark.{AbstractEventProcessor, AsuraClient, Conf, Utils}
 import org.apache.spark.sql.catalyst.analysis.PersistedView
@@ -114,16 +115,19 @@ class SparkExecutionPlanProcessor(client: AsuraClient, val conf: Conf)
         r.cmd match {
           case c: InsertIntoHiveTable =>
             logDebug(s"INSERT INTO HIVE TABLE query ${qd.qe}")
+            CommandsHarvester.InsertIntoHiveTableHarvester.harvest(c, qd)
 
           case c: InsertIntoHadoopFsRelationCommand =>
             logDebug(s"INSERT INTO SPARK TABLE query ${qd.qe}")
+            CommandsHarvester.InsertIntoHadoopFsRelationHarvester.harvest(c, qd)
 
           case c: CreateHiveTableAsSelectCommand =>
             logDebug(s"CREATE TABLE AS SELECT query: ${qd.qe}")
+            CommandsHarvester.CreateHiveTableAsSelectHarvester.harvest(c, qd)
 
           case c: CreateDataSourceTableAsSelectCommand =>
             logDebug(s"CREATE TABLE USING xx AS SELECT query: ${qd.qe}")
-
+            CommandsHarvester.CreateDataSourceTableAsSelectHarvester.harvest(c, qd)
           /**
            * {{{
            *   INSERT OVERWRITE [LOCAL] DIRECTORY
@@ -134,13 +138,15 @@ class SparkExecutionPlanProcessor(client: AsuraClient, val conf: Conf)
            * }}}
             */
           case c: InsertIntoHiveDirCommand =>
+            logDebug(s"CREATE TABLE USING xx AS SELECT query: ${qd.qe}")
+            CommandsHarvester.InsertIntoHiveDirHarvester.harvest(c, qd)
 
           case _ =>
             Seq.empty
         }
 
       case r: WriteToDataSourceV2Exec =>
-
+        WriteToDataSourceV2Harvester.harvest(r, qd)
 
       case _ =>
         Seq.empty

@@ -1,5 +1,6 @@
 package com.asura.spark.sql
 
+import scala.util.Try
 import com.asura.spark.Entity
 import com.asura.spark.types.internal.sparkStorageFormatToEntity
 import com.asura.spark.types.metadata.STORAGEDESC_TYPE_STRING
@@ -9,15 +10,19 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{PersistedView, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable, HiveTableRelation}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation, Project, ReplaceTableAsSelectStatement, View}
 import org.apache.spark.sql.connector.catalog.Table
-import org.apache.spark.sql.execution.{FileRelation, RowDataSourceScanExec, SparkPlan}
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, CreateTableCommand, CreateTableLikeCommand, CreateViewCommand, InsertIntoDataSourceDirCommand, LoadDataCommand}
+import org.apache.spark.sql.execution.{FileRelation, FileSourceScanExec, RowDataSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, CreateDataSourceTableCommand, CreateTableCommand, CreateTableLikeCommand, CreateViewCommand, InsertIntoDataSourceDirCommand, LoadDataCommand}
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCOptions
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoDataSourceCommand, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, FileBatchWrite, WriteToDataSourceV2Exec}
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoDataSourceCommand, InsertIntoHadoopFsRelationCommand, LogicalRelation, SaveIntoDataSourceCommand, WriteJobDescription}
+import org.apache.spark.sql.execution.streaming.sources.MicroBatchWrite
+import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, InsertIntoHiveDirCommand, InsertIntoHiveTable}
 import org.apache.spark.sql.sources.BaseRelation
+import org.apache.spark.sql.streaming.SinkProgress
 import org.json4s.JsonAST.JObject
 import org.json4s.jackson.JsonMethods.parse
 
@@ -41,6 +46,90 @@ object CommandsHarvester extends Logging {
       external.hiveTableToReference(tableDefinition, mockDbDefinition)
     } else {
       internal.sparkTableToEntity(tableDefinition, mockDbDefinition)
+    }
+  }
+
+  object InsertIntoHiveTableHarvester extends Harvester[InsertIntoHiveTable] {
+    override def harvest(
+                          node: InsertIntoHiveTable,
+                          qd: QueryDetail): Unit = {
+      // source tables entities
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+
+      // new table entity
+      val outputEntities = Seq(tableToEntity(node.table))
+
+    }
+  }
+
+  object InsertIntoHadoopFsRelationHarvester extends Harvester[InsertIntoHadoopFsRelationCommand] {
+    override def harvest(node: InsertIntoHadoopFsRelationCommand, qd: QueryDetail): Unit = {
+      // source tables/files entities
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+
+      // new table/file entity
+      val outputEntities = Seq(node.catalogTable.map(tableToEntity(_)).getOrElse(
+        external.pathToEntity(node.outputPath.toUri.toString)))
+
+    }
+  }
+
+  object CreateHiveTableAsSelectHarvester extends Harvester[CreateHiveTableAsSelectCommand] {
+    override def harvest(
+                          node: CreateHiveTableAsSelectCommand,
+                          qd: QueryDetail): Unit = {
+      // source tables entities
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+
+      // new table entity
+      val outputEntities = Seq(tableToEntity(node.tableDesc.copy(owner = SparkUtils.currUser())))
+
+    }
+  }
+
+  object CreateDataSourceTableAsSelectHarvester
+    extends Harvester[CreateDataSourceTableAsSelectCommand] {
+    override def harvest(node: CreateDataSourceTableAsSelectCommand, qd: QueryDetail): Unit = {
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+      val outputEntities = Seq(tableToEntity(node.table))
+
+    }
+  }
+
+  object InsertIntoHiveDirHarvester
+    extends Harvester[InsertIntoHiveDirCommand] {
+    override def harvest(node: InsertIntoHiveDirCommand, qd: QueryDetail): Unit = {
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+      val outputEntities = new Entity(STORAGEDESC_TYPE_STRING)
+      node.storage.toLinkedHashMap.foreach(kv => outputEntities.setAttribute(kv._1, kv._2))
+
+    }
+  }
+
+  object WriteToDataSourceV2Harvester extends Harvester[WriteToDataSourceV2Exec] {
+    override def harvest(node: WriteToDataSourceV2Exec, qd: QueryDetail): Unit = {
+      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
+
+      val outputEntities = node.batchWrite match {
+        case fw: FileBatchWrite =>
+          Try {
+            val method = fw.getClass.getMethod("description")
+            method.setAccessible(true)
+            val desc = method.invoke(fw).asInstanceOf[WriteJobDescription]
+            val outputPath = desc.path
+            // partition
+            val locations: Map[TablePartitionSpec, String] = desc.customPartitionLocations
+
+
+
+
+          }.getOrElse(Seq.empty)
+        case w: MicroBatchWrite =>
+          // TODO:
+
+        // case w => discoverOutputEntities(w)
+      }
+
     }
   }
 
@@ -166,6 +255,46 @@ object CommandsHarvester extends Logging {
 
     null
 
+  }
+
+  private def discoverInputsEntities(sparkPlan: SparkPlan, executedPlan: SparkPlan): Entity = {
+    sparkPlan.collectLeaves().flatMap {
+      case h if h.getClass.getName == "org.apache.spark.sql.hive.execution.HiveTableScanExec" =>
+        Try {
+          val method = h.getClass.getMethod("relation")
+          method.setAccessible(true)
+          val relation = method.invoke(h).asInstanceOf[HiveTableRelation]
+          Seq(tableToEntity(relation.tableMeta))
+        }.getOrElse(Seq.empty)
+
+      case f: FileSourceScanExec =>
+        f.tableIdentifier.map(tbl => Seq(prepareEntity(tbl))).getOrElse(
+          f.relation.location.inputFiles.flatMap(file => Seq(external.pathToEntity(file))).toSeq)
+//      case SHCEntities(shcEntities) => Seq(shcEntities)
+//      case HWCEntities(hwcEntities) => Seq(hwcEntities)
+      case JDBCEntities(jdbcEntities) => Seq(jdbcEntities)
+//      case KafkaEntities(kafkaEntities) => kafkaEntities
+      case e =>
+        logWarn(s"Missing unknown leaf node: $e")
+        null
+    }
+
+    null
+  }
+
+  private def discoverOutputEntities(sink: SinkProgress): Seq[Entity] = {
+    if (sink.description.contains("FileSink")) {
+      val begin = sink.description.indexOf('[')
+      val end = sink.description.indexOf(']')
+      val path = sink.description.substring(begin + 1, end)
+      logDebug(s"record the streaming query sink output path information $path")
+      Seq(external.pathToEntity(path))
+    } else if (sink.description.contains("ConsoleSinkProvider")) {
+      logInfo(s"do not track the console output as Atlas entity ${sink.description}")
+      Seq.empty
+    } else {
+      Seq.empty
+    }
   }
 
   object SHCEntities {
