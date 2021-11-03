@@ -126,7 +126,6 @@ object CommandsHarvester extends Logging {
 
         // case w => discoverOutputEntities(w)
       }
-
     }
   }
 
