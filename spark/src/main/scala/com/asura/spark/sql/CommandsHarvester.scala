@@ -121,7 +121,6 @@ object CommandsHarvester extends Logging {
             val locations: Map[TablePartitionSpec, String] = desc.customPartitionLocations
 
 
-
           }.getOrElse(Seq.empty)
         case w: MicroBatchWrite =>
           // TODO:
