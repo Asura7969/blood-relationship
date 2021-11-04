@@ -99,9 +99,13 @@ object CommandsHarvester extends Logging {
   object InsertIntoHiveDirHarvester
     extends Harvester[InsertIntoHiveDirCommand] {
     override def harvest(node: InsertIntoHiveDirCommand, qd: QueryDetail): Unit = {
-      val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
-      val outputEntities = new Entity(STORAGEDESC_TYPE_STRING)
-      node.storage.toLinkedHashMap.foreach(kv => outputEntities.setAttribute(kv._1, kv._2))
+      if (node.storage.locationUri.isEmpty) {
+        throw new IllegalStateException("Location URI is illegally empty")
+      }
+
+      val inputEntities = discoverInputsEntities(qd.qe.sparkPlan, qd.qe.executedPlan)
+      val outputEntities = Seq(external.pathToEntity(node.storage.locationUri.get.toString))
+
 
     }
   }
@@ -120,7 +124,7 @@ object CommandsHarvester extends Logging {
             // partition
             val locations: Map[TablePartitionSpec, String] = desc.customPartitionLocations
 
-          }.getOrElse(Seq.empty)
+          }.getOrElse(None)
         case w: MicroBatchWrite =>
           // TODO:
 

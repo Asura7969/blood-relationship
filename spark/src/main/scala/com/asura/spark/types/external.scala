@@ -1,7 +1,7 @@
 package com.asura.spark.types
 
 import com.asura.spark.Entity
-import com.asura.spark.util.SparkUtils
+import com.asura.spark.util.{JdbcUtils, SparkUtils}
 import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable}
 
@@ -83,9 +83,7 @@ object external {
   val HBASE_COLUMN_STRING = "hbase_column"
   val HBASE_TABLE_QUALIFIED_NAME_FORMAT = "%s:%s@%s"
 
-  def hbaseTableToEntity(
-                          tableName: String,
-                          nameSpace: String): Entity = {
+  def hbaseTableToEntity(tableName: String, nameSpace: String): Entity = {
     val hbaseEntity = new Entity(HBASE_TABLE_STRING)
     hbaseEntity.setAttribute("qualifiedName",
       getTableQualifiedName(nameSpace, tableName))
