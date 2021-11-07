@@ -1,19 +1,15 @@
 package com.asura.spark.sql
 
 import scala.util.Try
-import com.asura.spark.Entity
-import com.asura.spark.types.internal.sparkStorageFormatToEntity
+import com.asura.spark.{Entity, EntityDependencies}
 import com.asura.spark.types.metadata.STORAGEDESC_TYPE_STRING
 import com.asura.spark.types.{external, internal}
 import com.asura.spark.util.{Logging, SparkUtils}
-import org.apache.hadoop.fs.Path
-import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{PersistedView, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable, HiveTableRelation}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation, Project, ReplaceTableAsSelectStatement, View}
-import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.execution.{FileRelation, FileSourceScanExec, RowDataSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, CreateDataSourceTableCommand, CreateTableCommand, CreateTableLikeCommand, CreateViewCommand, InsertIntoDataSourceDirCommand, LoadDataCommand}
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCOptions
@@ -50,68 +46,71 @@ object CommandsHarvester extends Logging {
   }
 
   object InsertIntoHiveTableHarvester extends Harvester[InsertIntoHiveTable] {
-    override def harvest(
-                          node: InsertIntoHiveTable,
-                          qd: QueryDetail): Unit = {
+    override def harvest(node: InsertIntoHiveTable,
+                         qd: QueryDetail): EntityDependencies = {
       // source tables entities
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
 
       // new table entity
-      val outputEntities = Seq(tableToEntity(node.table))
+      val outputEntities = tableToEntity(node.table)
 
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object InsertIntoHadoopFsRelationHarvester extends Harvester[InsertIntoHadoopFsRelationCommand] {
-    override def harvest(node: InsertIntoHadoopFsRelationCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: InsertIntoHadoopFsRelationCommand,
+                         qd: QueryDetail): EntityDependencies = {
       // source tables/files entities
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
 
       // new table/file entity
-      val outputEntities = Seq(node.catalogTable.map(tableToEntity(_)).getOrElse(
-        external.pathToEntity(node.outputPath.toUri.toString)))
+      val outputEntities = node.catalogTable.map(tableToEntity(_)).getOrElse(
+        external.pathToEntity(node.outputPath.toUri.toString))
 
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object CreateHiveTableAsSelectHarvester extends Harvester[CreateHiveTableAsSelectCommand] {
-    override def harvest(
-                          node: CreateHiveTableAsSelectCommand,
-                          qd: QueryDetail): Unit = {
+    override def harvest(node: CreateHiveTableAsSelectCommand,
+                         qd: QueryDetail): EntityDependencies = {
       // source tables entities
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
 
       // new table entity
-      val outputEntities = Seq(tableToEntity(node.tableDesc.copy(owner = SparkUtils.currUser())))
-
+      val outputEntities = tableToEntity(node.tableDesc.copy(owner = SparkUtils.currUser()))
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object CreateDataSourceTableAsSelectHarvester
     extends Harvester[CreateDataSourceTableAsSelectCommand] {
-    override def harvest(node: CreateDataSourceTableAsSelectCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: CreateDataSourceTableAsSelectCommand, qd: QueryDetail): EntityDependencies = {
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
-      val outputEntities = Seq(tableToEntity(node.table))
-
+      val outputEntities = tableToEntity(node.table)
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object InsertIntoHiveDirHarvester
     extends Harvester[InsertIntoHiveDirCommand] {
-    override def harvest(node: InsertIntoHiveDirCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: InsertIntoHiveDirCommand,
+                         qd: QueryDetail): EntityDependencies = {
       if (node.storage.locationUri.isEmpty) {
         throw new IllegalStateException("Location URI is illegally empty")
       }
 
       val inputEntities = discoverInputsEntities(qd.qe.sparkPlan, qd.qe.executedPlan)
-      val outputEntities = Seq(external.pathToEntity(node.storage.locationUri.get.toString))
-
+      val outputEntities = external.pathToEntity(node.storage.locationUri.get.toString)
+      makeProcessEntities(inputEntities, outputEntities, qd)
 
     }
   }
 
   object WriteToDataSourceV2Harvester extends Harvester[WriteToDataSourceV2Exec] {
-    override def harvest(node: WriteToDataSourceV2Exec, qd: QueryDetail): Unit = {
+    override def harvest(node: WriteToDataSourceV2Exec,
+                         qd: QueryDetail): EntityDependencies = {
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
 
       val outputEntities = node.batchWrite match {
@@ -130,19 +129,24 @@ object CommandsHarvester extends Logging {
 
         // case w => discoverOutputEntities(w)
       }
+      // makeProcessEntities(inputEntities, outputEntities, qd)
+      null
     }
   }
 
   object LoadDataHarvester extends Harvester[LoadDataCommand] {
-    override def harvest(node: LoadDataCommand, qd: QueryDetail): Unit = {
-      val sourceEntity = external.pathToEntity(node.path)
+    override def harvest(node: LoadDataCommand,
+                         qd: QueryDetail): EntityDependencies = {
+      val inputEntities = external.pathToEntity(node.path)
 
-      val targetEntity = prepareEntity(node.table)
+      val outputEntities = prepareEntity(node.table)
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object CreateViewHarvester extends Harvester[CreateViewCommand] {
-    override def harvest(node: CreateViewCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: CreateViewCommand,
+                         qd: QueryDetail): EntityDependencies = {
       val child = node.plan.asInstanceOf[Project].child
       val sourceEntity = child match {
         case r: UnresolvedRelation =>
@@ -158,77 +162,81 @@ object CommandsHarvester extends Logging {
           }
           val tableDef = SparkUtils.getExternalCatalog().getTable(dbName, table)
           tableToEntity(tableDef)
-        case _: OneRowRelation => Seq.empty
+        case _: OneRowRelation => null
         case n =>
           logWarn(s"Unknown leaf node: $n")
-          Seq.empty
+          null
       }
       val viewIdentifier = node.name
-      val targetEntity = Seq(prepareEntity(viewIdentifier))
+      val targetEntity = prepareEntity(viewIdentifier)
+      makeProcessEntities(sourceEntity, targetEntity, qd)
     }
   }
 
   // InsertIntoDataSourceHarvester
   object InsertIntoDataSourceHarvester extends Harvester[InsertIntoDataSourceCommand] {
-    override def harvest(node: InsertIntoDataSourceCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: InsertIntoDataSourceCommand,
+                         qd: QueryDetail): EntityDependencies = {
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
       val outputEntities = discoverInputsEntities(node.logicalRelation, qd.qe.executedPlan)
 
-
+      makeProcessEntities(inputEntities, outputEntities, qd)
 
     }
   }
   object SaveIntoDataSourceHarvester extends Harvester[SaveIntoDataSourceCommand] {
-    override def harvest(node: SaveIntoDataSourceCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: SaveIntoDataSourceCommand,
+                         qd: QueryDetail): EntityDependencies = {
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
       val outputEntities = node match {
-        case JDBCEntities(jdbcEntities) => Seq(jdbcEntities)
+        case JDBCEntities(jdbcEntities) => jdbcEntities
         // case SHCEntities(shcEntities) => Seq(shcEntities)
         // case KafkaEntities(kafkaEntities) => kafkaEntities
         case e =>
           logWarn(s"Missing output entities: $e")
-          Seq.empty
+          null
       }
 
-
+      makeProcessEntities(inputEntities, outputEntities, qd)
 
     }
   }
 
   object CreateTableLikeHarvester extends Harvester[CreateTableLikeCommand] {
-    override def harvest(node: CreateTableLikeCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: CreateTableLikeCommand,
+                         qd: QueryDetail): EntityDependencies = {
 
       val inputEntities = prepareEntity(node.sourceTable)
       val outputEntities = prepareEntity(node.targetTable)
-
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object CreateDataSourceTableHarvester extends Harvester[CreateDataSourceTableCommand] {
     override def harvest(
         node: CreateDataSourceTableCommand,
-        qd: QueryDetail): Unit = {
+        qd: QueryDetail): EntityDependencies = {
       // only have table entities
-      Seq(tableToEntity(node.table))
+      EntityDependencies(tableToEntity(node.table))
     }
   }
 
   object InsertIntoDataSourceDirHarvester extends Harvester[InsertIntoDataSourceDirCommand] {
-    override def harvest(node: InsertIntoDataSourceDirCommand, qd: QueryDetail): Unit = {
+    override def harvest(node: InsertIntoDataSourceDirCommand,
+                         qd: QueryDetail): EntityDependencies = {
       val inputEntities = discoverInputsEntities(node.query, qd.qe.executedPlan)
       val outputEntities = new Entity(STORAGEDESC_TYPE_STRING)
       node.storage.toLinkedHashMap.foreach(kv => outputEntities.setAttribute(kv._1, kv._2))
 
-
-      null
+      makeProcessEntities(inputEntities, outputEntities, qd)
     }
   }
 
   object CreateTableHarvester extends Harvester[CreateTableCommand] {
     override def harvest(
         node: CreateTableCommand,
-        qd: QueryDetail): Unit = {
-      Seq(tableToEntity(node.table))
+        qd: QueryDetail): EntityDependencies = {
+      EntityDependencies(tableToEntity(node.table))
     }
   }
 
@@ -380,4 +388,32 @@ object CommandsHarvester extends Logging {
     }
   }
 
+  private def getPlanInfo(qd: QueryDetail): Map[String, String] = {
+    Map("executionId" -> qd.executionId.toString,
+      "remoteUser" -> SparkUtils.currSessionUser(qd.qe),
+      "details" -> qd.qe.toString(),
+      "sparkPlanDescription" -> qd.qe.sparkPlan.toString())
+  }
+
+  private def makeProcessEntities(inputsEntities: Entity,
+                                  outputEntities: Entity,
+                                  qd: QueryDetail): EntityDependencies = {
+    val logMap = getPlanInfo(qd)
+
+    val cleanedOutput = cleanOutput(inputsEntities, outputEntities)
+
+    internal.etlProcessToEntity(inputsEntities, cleanedOutput, logMap)
+  }
+
+  def cleanOutput(inputs: Entity, outputs: Entity): Entity = {
+    val qualifiedNames = inputs.qualifiedName
+    val isCycle = outputs.qualifiedName.equals(qualifiedNames)
+    if (isCycle) {
+      logWarn("Detected cycle - same entity observed to both input and output. " +
+        "Discarding output entities as Atlas doesn't support cycle.")
+      null
+    } else {
+      outputs
+    }
+  }
 }

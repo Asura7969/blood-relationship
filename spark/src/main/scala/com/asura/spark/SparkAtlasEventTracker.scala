@@ -19,7 +19,7 @@ class SparkAtlasEventTracker(client: AsuraClient, conf: Conf)
 
   // Processor to handle DDL related events
   @VisibleForTesting
-  private[atlas] val catalogEventTracker = new SparkCatalogEventProcessor(client, conf)
+  private[asura] val catalogEventTracker = new SparkCatalogEventProcessor(client, conf)
   catalogEventTracker.startThread()
 
   // Processor to handle DML related events

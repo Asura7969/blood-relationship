@@ -1,6 +1,6 @@
 package com.asura.spark.types
 
-import com.asura.spark.Entity
+import com.asura.spark.{Entity, EntityDependencies}
 import com.asura.spark.util.{Logging, SparkUtils}
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogStorageFormat, CatalogTable}
 
@@ -103,23 +103,46 @@ object internal extends Logging {
     tblEntity
   }
 
-  def sparkTableToEntityForAlterTable(
-                                       tblDefinition: CatalogTable,
-                                       mockDbDefinition: Option[CatalogDatabase] = None): SACAtlasReferenceable = {
+  def sparkTableToEntityForAlterTable(tblDefinition: CatalogTable,
+                                      mockDbDefinition: Option[CatalogDatabase] = None)
+  : Entity = {
     val tableEntity = sparkTableToEntity(tblDefinition, mockDbDefinition)
-    val deps = tableEntity.dependencies
+//    val deps = tableEntity.dependencies
+//
+//    val dbEntity = deps.filter(_.typeName == metadata.DB_TYPE_STRING).head
+//    val sdEntity = deps.filter(_.typeName == metadata.STORAGEDESC_TYPE_STRING).head
+//
+//    // override attribute with reference - Atlas should already have these entities
+//    tableEntity.entity.setRelationshipAttribute("db", dbEntity.asObjectId)
+//    tableEntity.entity.setRelationshipAttribute("sd", sdEntity.asObjectId)
 
-    val dbEntity = deps.filter(_.typeName == metadata.DB_TYPE_STRING).head
-    val sdEntity = deps.filter(_.typeName == metadata.STORAGEDESC_TYPE_STRING).head
-
-    // override attribute with reference - Atlas should already have these entities
-    tableEntity.entity.setRelationshipAttribute("db", dbEntity.asObjectId)
-    tableEntity.entity.setRelationshipAttribute("sd", sdEntity.asObjectId)
-
-    SACAtlasEntityWithDependencies(tableEntity.entity)
+    tableEntity
   }
 
   def sparkProcessUniqueAttribute(executionId: Long): String = {
     SparkUtils.sparkSession.sparkContext.applicationId + "." + executionId
+  }
+
+  def etlProcessToEntity(inputs: Entity,
+                         outputs: Entity,
+                         logMap: Map[String, String]): EntityDependencies = {
+    val entity = new Entity(metadata.PROCESS_TYPE_STRING)
+
+    val appId = SparkUtils.sparkSession.sparkContext.applicationId
+    val appName = SparkUtils.sparkSession.sparkContext.appName match {
+      case "Spark shell" => s"Spark Job + $appId"
+      case default => default + s" $appId"
+    }
+    entity.setAttribute("qualifiedName", appId)
+    entity.setAttribute("name", appName)
+    entity.setAttribute("currUser", SparkUtils.currUser())
+
+//    val inputObjIds = inputs.map(_.asObjectId).asJava
+//    val outputObjIds = outputs.map(_.asObjectId).asJava
+//    entity.setAttribute("inputs", inputObjIds)  // Dataset and Model entity
+//    entity.setAttribute("outputs", outputObjIds)  // Dataset entity
+    logMap.foreach { case (k, v) => entity.setAttribute(k, v)}
+
+    new EntityDependencies(entity, inputs, outputs)
   }
 }

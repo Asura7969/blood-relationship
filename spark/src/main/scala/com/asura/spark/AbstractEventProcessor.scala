@@ -13,7 +13,7 @@ abstract class AbstractEventProcessor[T: ClassTag] extends Logging {
 
   private val capacity = conf.get(Conf.BLOCKING_QUEUE_CAPACITY).toInt
 
-  private[atlas] val eventQueue = new LinkedBlockingQueue[T](capacity)
+  private[asura] val eventQueue = new LinkedBlockingQueue[T](capacity)
 
   private val timeout = conf.get(Conf.BLOCKING_QUEUE_PUT_TIMEOUT).toInt
 
@@ -48,7 +48,7 @@ abstract class AbstractEventProcessor[T: ClassTag] extends Logging {
   protected def process(e: T): Unit
 
   @VisibleForTesting
-  private[atlas] def eventProcess(): Unit = {
+  private[asura] def eventProcess(): Unit = {
     var stopped = false
     while (!stopped) {
       try {
