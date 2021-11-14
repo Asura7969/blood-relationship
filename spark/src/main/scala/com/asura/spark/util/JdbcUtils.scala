@@ -4,7 +4,7 @@ import com.asura.spark.Utils.logWarn
 
 /**
  * @Date 2021/11/4 11:26 上午
- * @author gongwenzhou@hellobike.com
+ * @author asura7969
  * @Describe TODO
  */
 object JdbcUtils {
