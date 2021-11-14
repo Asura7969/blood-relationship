@@ -65,7 +65,7 @@
         -->
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-scala_2.11</artifactId>
+            <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -147,6 +147,10 @@
                 <exclusion>
                     <groupId>commons-configuration</groupId>
                     <artifactId>commons-configuration</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-core</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>

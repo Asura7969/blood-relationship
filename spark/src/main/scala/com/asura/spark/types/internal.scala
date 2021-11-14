@@ -18,9 +18,8 @@ object internal extends Logging {
 
   def sparkDbUniqueAttribute(db: String): String = SparkUtils.getUniqueQualifiedPrefix() + db
 
-  def sparkDbToEntity(
-                       dbDefinition: CatalogDatabase,
-                       owner: String): Entity = {
+  def sparkDbToEntity(dbDefinition: CatalogDatabase,
+                      owner: String): Entity = {
     val dbEntity = new Entity(metadata.DB_TYPE_STRING)
 
     dbEntity.setAttribute(

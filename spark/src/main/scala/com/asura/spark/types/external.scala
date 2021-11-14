@@ -1,6 +1,7 @@
 package com.asura.spark.types
 
 import com.asura.spark.Entity
+import com.asura.spark.Entity.REFERENCEABLE_ATTRIBUTE_NAME
 import com.asura.spark.util.{JdbcUtils, SparkUtils}
 import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable}
@@ -26,7 +27,7 @@ object external {
         Path.getPathWithoutSchemeAndAuthority(fsPath).toString.toLowerCase)
       entity.setAttribute("path",
         Path.getPathWithoutSchemeAndAuthority(fsPath).toString.toLowerCase)
-      entity.setAttribute("qualifiedName", uri.toString)
+      entity.setAttribute(REFERENCEABLE_ATTRIBUTE_NAME, uri.toString)
       entity.setAttribute("clusterName", uri.getAuthority)
 
       entity
@@ -36,7 +37,7 @@ object external {
         Path.getPathWithoutSchemeAndAuthority(fsPath).toString.toLowerCase)
       entity.setAttribute("path",
         Path.getPathWithoutSchemeAndAuthority(fsPath).toString.toLowerCase)
-      entity.setAttribute("qualifiedName", uri.toString)
+      entity.setAttribute(REFERENCEABLE_ATTRIBUTE_NAME, uri.toString)
 
       entity
     }

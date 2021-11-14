@@ -4,7 +4,7 @@ import com.asura.spark.{WithHiveSupport, WithRemoteHiveMetastoreServiceSupport}
 import com.asura.spark.types.{external, internal}
 import com.asura.spark.sql.testhelper.BaseHarvesterSuite
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.LeafExecNode
+import org.apache.spark.sql.execution.{CommandResultExec, LeafExecNode}
 import org.apache.spark.sql.execution.command.{ExecutedCommandExec, LoadDataCommand}
 
 import java.io.{FileOutputStream, PrintWriter}
@@ -41,8 +41,8 @@ abstract class BaseLoadDataHarvesterSuite
     val qd = QueryDetail(qe, 0L)
     val node = qe.sparkPlan.collect { case p: LeafExecNode => p }
     assert(node.size == 1)
-    val execNode = node.head.asInstanceOf[ExecutedCommandExec]
-
+//    val execNode = node.head.asInstanceOf[ExecutedCommandExec]
+    val execNode = node.head.asInstanceOf[CommandResultExec].commandPhysicalPlan.asInstanceOf[ExecutedCommandExec]
     val entities = CommandsHarvester.LoadDataHarvester.harvest(
       execNode.cmd.asInstanceOf[LoadDataCommand], qd)
 

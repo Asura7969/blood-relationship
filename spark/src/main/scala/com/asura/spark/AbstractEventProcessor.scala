@@ -52,9 +52,12 @@ abstract class AbstractEventProcessor[T: ClassTag] extends Logging {
     var stopped = false
     while (!stopped) {
       try {
-        Option(eventQueue.poll(3000, TimeUnit.MILLISECONDS)).foreach { e =>
+        Option(eventQueue.take()).foreach { e =>
           process(e)
         }
+//        Option(eventQueue.poll(3000, TimeUnit.MILLISECONDS)).foreach { e =>
+//          process(e)
+//        }
       } catch {
         case _: InterruptedException =>
           logDebug("Thread is interrupted")

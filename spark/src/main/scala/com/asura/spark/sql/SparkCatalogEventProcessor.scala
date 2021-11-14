@@ -1,8 +1,8 @@
 package com.asura.spark.sql
 
-import com.asura.spark.types.external
+import com.asura.spark.types.{external, internal}
 import com.asura.spark.types.internal.{sparkDbToEntity, sparkDbUniqueAttribute, sparkStorageFormatUniqueAttribute, sparkTableToEntity, sparkTableToEntityForAlterTable, sparkTableUniqueAttribute}
-import com.asura.spark.types.metadata.{STORAGEDESC_TYPE_STRING, TABLE_TYPE_STRING}
+import com.asura.spark.types.metadata.{DB_TYPE_STRING, STORAGEDESC_TYPE_STRING, TABLE_TYPE_STRING}
 import com.asura.spark.util.{Logging, SparkUtils}
 import com.asura.spark.{AbstractEventProcessor, AsuraClient, Conf, Entity}
 import org.apache.spark.sql.catalyst.analysis.NoSuchDatabaseException
@@ -27,7 +27,7 @@ class SparkCatalogEventProcessor(client: AsuraClient, val conf: Conf)
       case CreateDatabaseEvent(db) =>
         val dbDefinition = SparkUtils.getExternalCatalog().getDatabase(db)
         val entity = sparkDbToEntity(dbDefinition, SparkUtils.currUser())
-        // atlasClient.createEntitiesWithDependencies(entity)
+        client.saveEntity(entity)
         logDebug(s"Created db entity $db")
 
       case DropDatabasePreEvent(db) =>
@@ -40,15 +40,13 @@ class SparkCatalogEventProcessor(client: AsuraClient, val conf: Conf)
         }
 
       case DropDatabaseEvent(db) =>
-        // atlasClient.deleteEntityWithUniqueAttr(sparkDbType, sparkDbUniqueAttribute(db))
-
+        client.deleteEntity(DB_TYPE_STRING, internal.sparkDbUniqueAttribute(db))
         cachedObject.remove(sparkDbUniqueAttribute(db)).foreach { o =>
           val dbDef = o.asInstanceOf[CatalogDatabase]
           val path = dbDef.locationUri.toString
           val pathEntity = external.pathToEntity(path)
 
-//          atlasClient.deleteEntityWithUniqueAttr(pathEntity.entity.getTypeName,
-//            AtlasEntityReadHelper.getQualifiedName(pathEntity.entity))
+          client.deleteEntity(pathEntity.getTypeName, pathEntity.qualifiedName)
         }
 
         logDebug(s"Deleted db entity $db")
@@ -59,7 +57,7 @@ class SparkCatalogEventProcessor(client: AsuraClient, val conf: Conf)
       case CreateTableEvent(db, table) =>
         val tableDefinition = SparkUtils.getExternalCatalog().getTable(db, table)
         val tableEntity = sparkTableToEntity(tableDefinition)
-        // atlasClient.createEntitiesWithDependencies(tableEntity)
+        client.saveEntity(tableEntity)
         logDebug(s"Created table entity $table without columns")
 
       case DropTablePreEvent(_, _) => // No-op
@@ -73,27 +71,25 @@ class SparkCatalogEventProcessor(client: AsuraClient, val conf: Conf)
         val sdEntity = new Entity(STORAGEDESC_TYPE_STRING)
         sdEntity.setAttribute("qualifiedName",
           sparkStorageFormatUniqueAttribute(db, newName))
-//        atlasClient.updateEntityWithUniqueAttr(
-//          sparkStorageFormatType,
-//          sparkStorageFormatUniqueAttribute(db, name),
-//          sdEntity)
+        client.updateEntity(STORAGEDESC_TYPE_STRING,
+          sparkStorageFormatUniqueAttribute(db, name),
+          sdEntity)
 
         // Update Table name and Table's unique attribute
         val tableEntity = new Entity(TABLE_TYPE_STRING)
         tableEntity.setAttribute("qualifiedName",
           sparkTableUniqueAttribute(db, newName))
         tableEntity.setAttribute("name", newName)
-//        atlasClient.updateEntityWithUniqueAttr(
-//          sparkTableType,
-//          sparkTableUniqueAttribute(db, name),
-//          tableEntity)
+        client.updateEntity(TABLE_TYPE_STRING,
+          sparkTableUniqueAttribute(db, name),
+          tableEntity)
 
         logDebug(s"Rename table entity $name to $newName")
 
       case AlterDatabaseEvent(db) =>
         val dbDefinition = SparkUtils.getExternalCatalog().getDatabase(db)
         val dbEntity = sparkDbToEntity(dbDefinition, SparkUtils.currUser())
-//        atlasClient.createEntitiesWithDependencies(dbEntity)
+        client.saveEntity(dbEntity)
         logDebug(s"Updated DB properties")
 
       case AlterTableEvent(db, table, kind) =>
@@ -101,7 +97,7 @@ class SparkCatalogEventProcessor(client: AsuraClient, val conf: Conf)
         kind match {
           case "table" =>
             val tableEntity = sparkTableToEntityForAlterTable(tableDefinition)
-//            atlasClient.createEntitiesWithDependencies(tableEntity)
+            client.saveEntity(tableEntity)
             logDebug(s"Updated table entity $table without columns")
 
           case "dataSchema" =>

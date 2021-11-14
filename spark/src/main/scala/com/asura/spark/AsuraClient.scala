@@ -8,5 +8,11 @@ import com.asura.spark.util.Logging
  */
 trait AsuraClient extends Logging {
 
+  def getEntityByAttribute(typeName: String, uniqueAttr: String): Entity
 
+  def saveEntity(entity: Entity): Unit
+
+  def updateEntity(typeName: String, uniqueAttr: String, replace: Entity): Unit
+
+  def deleteEntity(typeName: String, uniqueAttr: String): Unit
 }
